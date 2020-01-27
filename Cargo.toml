@@ -24,3 +24,4 @@ structopt = "0.3"
 
 [patch.crates-io]
 secret-service = { git = 'https://github.com/regiontog/secret-service-rs' }
+keyring = { git = 'https://github.com/regiontog/keyring-rs' }
