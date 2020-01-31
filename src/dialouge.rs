@@ -1,7 +1,6 @@
 use std::io;
 use std::io::Write;
 
-use crate::Client;
 use anyhow::Result;
 
 pub fn confirm(prompt: &str) -> Result<bool> {
@@ -16,7 +15,7 @@ pub fn confirm(prompt: &str) -> Result<bool> {
     Ok(input == "" || input == "y" || input == "Y")
 }
 
-pub(super) fn new_client() -> Result<Client> {
+pub(super) fn new_client() -> Result<()> {
     // FIXME: Some spiel about settings the redirect whitelist
     writeln!(
         io::stdout(),
@@ -40,7 +39,7 @@ pub(super) fn new_client() -> Result<Client> {
         .trim()
         .to_owned();
 
-    Ok(Client::new(id, secret))
+    unimplemented!()
 }
 
 pub(super) fn secret_for(id: &str) -> Result<String> {
@@ -60,14 +59,10 @@ pub(super) fn secret_for(id: &str) -> Result<String> {
         .to_owned())
 }
 
-pub(super) fn set_default(_client: &Client) -> Result<bool> {
+pub(super) fn set_default() -> Result<bool> {
     confirm("Set new client as default")
 }
 
-pub(super) fn display<T: serde::ser::Serialize>(value: T) -> Result<()> {
-    Ok(writeln!(
-        io::stdout(),
-        "{}",
-        serde_json::to_string_pretty(&value)?
-    )?)
+pub(super) fn display(value: &str) -> Result<()> {
+    Ok(writeln!(io::stdout(), "{}", value)?)
 }

@@ -1,52 +1,27 @@
 use anyhow::Result;
-use rspotify::spotify::client::Spotify;
+use spotify_web::scope::*;
 use structopt::StructOpt;
 
 mod cli;
+mod config;
 mod dialouge;
 mod error;
 mod keyring;
 mod oauth;
 
-struct Client {
-    id: String,
-    secret: String,
-}
+type Scope = spotify_web::scopes![UserReadCurrentlyPlaying, UserModifyPlaybackState];
 
-impl Client {
-    fn new(id: String, secret: String) -> Self {
-        Self { id, secret }
-    }
-}
+static CRYPT_ALGO: &ring::aead::Algorithm = &ring::aead::AES_256_GCM;
 
 fn main() -> Result<()> {
-    let args = cli::CLI::from_args();
+    let mut config = config::get().ok();
+    let cli = cli::CLI::from_args();
 
-    let client = keyring::get_or_create_client(args.client_id.as_ref().map(|s| s.as_str()))?;
-    let auth = oauth::build(&client);
-
-    let mut created_now = false;
-
-    let mut token = keyring::token(&client, || {
-        created_now = true;
-        let code = auth.code()?;
-
-        Ok(auth
-            .token(&code)
-            .ok_or(error::ApplicationError::TokenRequestFailed)?)
-    })?;
-
-    if !created_now {
-        // TODO: Maybe don't refresh if token is very fresh
-        if let Some(t) = auth.refresh(&token) {
-            token = t;
-            keyring::store_token(&client, &token)?;
-        }
+    if let Some(config) = config.as_mut() {
+        cli.run(config)?;
+    } else {
+        cli.run(&mut Default::default())?;
     }
 
-    args.run(Spotify::default().access_token(&token.access_token).build())
-}
-
-fn get<T>(value: std::result::Result<T, failure::Error>) -> Result<T> {
-    value.map_err(|f| f.compat().into())
+    config.map(|c| c.write_if_dirty()).unwrap_or(Ok(()))
 }

@@ -5,8 +5,16 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ApplicationError {
-    #[error("Could not fetch token from spotify web API")]
-    TokenRequestFailed,
+    #[error("Could not find app data dir")]
+    UnavailableConfigDir,
+    #[error("An error occured during crypto operatation")]
+    CryptographyError(ring::error::Unspecified),
+}
+
+impl From<ring::error::Unspecified> for ApplicationError {
+    fn from(err: ring::error::Unspecified) -> Self {
+        Self::CryptographyError(err)
+    }
 }
 
 #[derive(Debug)]
