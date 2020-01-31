@@ -85,18 +85,27 @@ pub fn get() -> Option<Config> {
         let mut path = dirs.data_dir().to_owned();
         log::trace!("config dir: {:#?}", &path);
 
-        std::fs::create_dir_all(&path);
+        std::fs::create_dir_all(&path)?;
         path.push("config.toml");
 
         log::debug!("config path: {:#?}", &path);
 
-        let mut file = OpenOptions::new().write(true).create(true).open(&path)?;
-        let mut content =
-            String::with_capacity(file.metadata().map(|m| m.len() as usize + 1).unwrap_or(0));
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&path)?;
 
-        file.read_to_string(&mut content)?;
+        let len = file.metadata()?.len();
 
-        let mut config: Config = toml::from_str(&content)?;
+        let mut config: Config = if len > 0 {
+            let mut content = String::with_capacity(len as usize + 1);
+            file.read_to_string(&mut content)?;
+
+            toml::from_str(&content)?
+        } else {
+            Default::default()
+        };
 
         config.path = path;
 
