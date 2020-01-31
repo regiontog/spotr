@@ -15,8 +15,7 @@ pub fn confirm(prompt: &str) -> Result<bool> {
     Ok(input == "" || input == "y" || input == "Y")
 }
 
-pub(super) fn new_client() -> Result<()> {
-    // FIXME: Some spiel about settings the redirect whitelist
+pub(super) fn new_client() -> Result<(String, String)> {
     writeln!(
         io::stdout(),
         "To use this CLI application you need to register an application with spotify. \
@@ -39,7 +38,7 @@ pub(super) fn new_client() -> Result<()> {
         .trim()
         .to_owned();
 
-    unimplemented!()
+    Ok((id, secret))
 }
 
 pub(super) fn secret_for(id: &str) -> Result<String> {

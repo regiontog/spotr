@@ -16,6 +16,15 @@ pub(super) struct CLI {
     #[structopt(long, short = "i")]
     pub(super) client_id: Option<String>,
 
+    /// Verbosity of logging, repeated occurrences count as higher log levels
+    #[structopt(
+        name = "verbose",
+        long = "verbose",
+        short = "v",
+        parse(from_occurrences)
+    )]
+    pub(super) verbose: u8,
+
     #[structopt(subcommand)]
     cmd: Command,
 }
@@ -24,7 +33,7 @@ pub(super) struct CLI {
 enum Command {
     Client {
         #[structopt(subcommand)]
-        cmd: Client
+        cmd: Client,
     },
 
     #[structopt(alias = "s")]
@@ -45,7 +54,7 @@ enum Client {
 #[derive(StructOpt)]
 struct ClientNew {}
 
-    /// List all existing clients
+/// List all existing clients
 #[derive(StructOpt)]
 struct ClientList {}
 
@@ -135,7 +144,11 @@ impl ClientList {
 
 impl ClientNew {
     fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
-        unimplemented!()
+        let enc_key = crate::keyring::get_or_create_key()?;
+
+        let (id, secret) = crate::dialouge::new_client()?;
+
+        config.add_client(id, secret, &enc_key)
     }
 }
 

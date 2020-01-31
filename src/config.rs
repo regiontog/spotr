@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 
 use crate::error::ApplicationError;
+use crate::log_err;
 use anyhow::Result;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,25 @@ impl Config {
         unimplemented!()
     }
 
+    pub fn add_client(&mut self, id: String, secret: String, enc_key: &[u8]) -> Result<()> {
+        self.dirty = true;
+
+        self.clients.insert(
+            id,
+            ClientData {
+                //FIXME: encrypt
+                enc_secret: secret,
+                enc_token: None,
+            },
+        );
+
+        Ok(())
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
     pub fn write_if_dirty(self) -> anyhow::Result<()> {
         if self.dirty {
             let mut file = OpenOptions::new().write(true).open(&self.path)?;
@@ -57,22 +77,29 @@ impl Config {
     }
 }
 
-pub fn get() -> anyhow::Result<Config> {
-    let dirs = ProjectDirs::from("rs", "regiontog", "spotr")
-        .ok_or(ApplicationError::UnavailableConfigDir)?;
+pub fn get() -> Option<Config> {
+    log_err!({
+        let dirs = ProjectDirs::from("rs", "regiontog", "spotr")
+            .ok_or(ApplicationError::UnavailableConfigDir)?;
 
-    let mut path = dirs.data_dir().to_owned();
-    path.push("config.toml");
+        let mut path = dirs.data_dir().to_owned();
+        log::trace!("config dir: {:#?}", &path);
 
-    let mut file = OpenOptions::new().write(true).create(true).open(&path)?;
-    let mut content =
-        String::with_capacity(file.metadata().map(|m| m.len() as usize + 1).unwrap_or(0));
+        std::fs::create_dir_all(&path);
+        path.push("config.toml");
 
-    file.read_to_string(&mut content)?;
+        log::debug!("config path: {:#?}", &path);
 
-    let mut config: Config = toml::from_str(&content)?;
+        let mut file = OpenOptions::new().write(true).create(true).open(&path)?;
+        let mut content =
+            String::with_capacity(file.metadata().map(|m| m.len() as usize + 1).unwrap_or(0));
 
-    config.path = path;
+        file.read_to_string(&mut content)?;
 
-    Ok(config)
+        let mut config: Config = toml::from_str(&content)?;
+
+        config.path = path;
+
+        Ok(config)
+    })
 }

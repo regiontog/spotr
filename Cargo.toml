@@ -26,6 +26,8 @@ directories = "2.0"
 # spotify-web = { git = "https://github.com/regiontog/spotify-web" }
 spotify-web = { path = "../spotify-web" }
 ring = "0.16"
+log = "0.4"
+env_logger = "0.7"
 
 [patch.crates-io]
 secret-service = { git = 'https://github.com/regiontog/secret-service-rs' }
