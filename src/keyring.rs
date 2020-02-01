@@ -2,7 +2,6 @@ use anyhow::Result;
 use keyring::Keyring;
 use ring::rand::SecureRandom;
 
-use crate::dialouge;
 use crate::error::{ApplicationError, SyncError};
 
 fn secret_key() -> Keyring<'static> {
@@ -23,11 +22,18 @@ fn new_secret(key: &Keyring) -> Result<Vec<u8>> {
     Ok(secret)
 }
 
-pub(super) fn get_or_create_key() -> Result<Vec<u8>> {
+fn to_lsk(bytes: &[u8]) -> Result<ring::aead::LessSafeKey> {
+    let ub = ring::aead::UnboundKey::new(crate::CRYPT_ALGO, bytes)
+        .map_err(Into::<ApplicationError>::into)?;
+
+    Ok(ring::aead::LessSafeKey::new(ub))
+}
+
+pub(super) fn get_or_create_key() -> Result<ring::aead::LessSafeKey> {
     let key = secret_key();
 
     match key.get_password() {
-        Err(keyring::KeyringError::NoPasswordFound) => new_secret(&key),
+        Err(keyring::KeyringError::NoPasswordFound) => Ok(to_lsk(&new_secret(&key)?)?),
         Ok(b64) => {
             let mut secret = vec![0; crate::CRYPT_ALGO.key_len()];
 
@@ -40,7 +46,7 @@ pub(super) fn get_or_create_key() -> Result<Vec<u8>> {
                 secret = new_secret(&key)?;
             }
 
-            Ok(secret)
+            Ok(to_lsk(&secret)?)
         }
         Err(e) => Err(SyncError::new(e).into()),
     }

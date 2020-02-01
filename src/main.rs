@@ -15,6 +15,13 @@ type Scope = spotify_web::scopes![UserReadCurrentlyPlaying, UserModifyPlaybackSt
 
 static CRYPT_ALGO: &ring::aead::Algorithm = &ring::aead::AES_256_GCM;
 
+// TODO
+// * implement nonces
+// * rm clients
+// * eject tokens
+// * improve token aquire code
+// * measure get status pref now that we don't call secret-service 3 times per run
+
 fn main() -> Result<()> {
     let cli = cli::CLI::from_args();
 

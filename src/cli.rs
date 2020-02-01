@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use anyhow::{anyhow, Result};
 use spotify_web::Spotify;
 use structopt::StructOpt;
@@ -31,6 +33,7 @@ pub(super) struct CLI {
 
 #[derive(StructOpt)]
 enum Command {
+    #[structopt(alias = "c")]
     Client {
         #[structopt(subcommand)]
         cmd: Client,
@@ -46,7 +49,10 @@ enum Command {
 /// Edit available clients
 #[derive(StructOpt)]
 enum Client {
+    #[structopt(alias = "n")]
     New(ClientNew),
+
+    #[structopt(alias = "l")]
     List(ClientList),
 }
 
@@ -134,8 +140,19 @@ impl Client {
 
 impl ClientList {
     fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
-        for client in config.clients().keys() {
-            crate::dialouge::display(client)?;
+        let default = config.default();
+
+        for client in config.clients() {
+            write!(std::io::stdout(), "{:<33}", client)?;
+            writeln!(
+                std::io::stdout(),
+                "{}",
+                if default == Some(client) {
+                    "[default]"
+                } else {
+                    ""
+                }
+            )?;
         }
 
         Ok(())
@@ -148,7 +165,13 @@ impl ClientNew {
 
         let (id, secret) = crate::dialouge::new_client()?;
 
-        config.add_client(id, secret, &enc_key)
+        config.add_client(id.clone(), secret, &enc_key)?;
+
+        if crate::dialouge::set_default()? {
+            config.set_default(id);
+        }
+
+        Ok(())
     }
 }
 
