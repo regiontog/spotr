@@ -7,6 +7,24 @@ use structopt::StructOpt;
 use crate::config::Config;
 use crate::Scope;
 
+struct LazySpotify {
+    generator: fn(Option<String>, &mut Config) -> Result<Spotify<Scope>>,
+    cell: Option<std::result::Result<Spotify<Scope>, crate::error::ArcAnyhowError>>,
+    client_id: Option<String>,
+}
+
+impl LazySpotify {
+    fn as_mut<'a>(&mut self, cfg: &'a mut Config) -> Result<&mut Spotify<Scope>, anyhow::Error> {
+        let id = &mut self.client_id;
+        let generator = self.generator;
+
+        self.cell
+            .get_or_insert_with(|| (generator)(id.take(), cfg).map_err(crate::error::ArcAnyhowError::new))
+            .as_mut()
+            .map_err(Into::into)
+    }
+}
+
 #[derive(StructOpt)]
 #[structopt(
     rename_all = "kebab-case",
@@ -54,6 +72,36 @@ enum Client {
 
     #[structopt(alias = "l")]
     List(ClientList),
+
+    #[structopt(alias = "rm")]
+    Remove(ClientRemove),
+
+    #[structopt(alias = "e")]
+    Eject(ClientEject),
+
+    #[structopt(alias = "d")]
+    Default(ClientDefault),
+}
+
+/// Eject a client's token
+#[derive(StructOpt)]
+struct ClientEject {
+    /// Target clients to remove
+    ids: Vec<String>,
+}
+
+/// Set default client
+#[derive(StructOpt)]
+struct ClientDefault {
+    /// Id of new default client
+    id: String,
+}
+
+/// Remove a client
+#[derive(StructOpt)]
+struct ClientRemove {
+    /// Target clients
+    ids: Vec<String>,
 }
 
 /// Add new client
@@ -78,19 +126,27 @@ struct Pause {}
 
 impl CLI {
     pub(super) fn run(self, config: &mut Config) -> Result<()> {
-        self.cmd.run(&self, config)
+        let spotify = LazySpotify {
+            client_id: self.client_id,
+            generator: CLI::gen_spotify,
+            cell: None,
+        };
+
+        self.cmd.run(spotify, config)
     }
 
-    fn spotify(&self, config: &mut Config) -> Result<Spotify<Scope>> {
+    fn gen_spotify(client_id: Option<String>, config: &mut Config) -> Result<Spotify<Scope>> {
         let enc_key = crate::keyring::get_or_create_key()?;
 
-        let id = self
-            .client_id
-            .clone()
+        let id = client_id
             .or_else(|| config.default().cloned())
             .ok_or(anyhow!("Client id required!"))?;
 
-        let (secret, token) = config.get_client_data(&id, &enc_key)?;
+        log::trace!("building spotify client using id = '{}'", &id);
+
+        let (secret, token) = config
+            .get_client_data(&id, &enc_key)
+            .ok_or(anyhow!("No client with id = '{}'", id))??;
 
         let client = spotify_web::Client::new(&id, &secret, Scope::create());
 
@@ -100,10 +156,7 @@ impl CLI {
             .build();
 
         // TODO: Maybe don't refresh if token is very fresh
-        if let Some(token) = token
-            .and_then(|token| auth.refresh_token(&token))
-            .transpose()?
-        {
+        if let Some(token) = token.map(|token| auth.refresh_token(token)).transpose()? {
             config.set_token(&id, &token, &enc_key)?;
 
             Ok(client.with_access_token(&token)?)
@@ -119,39 +172,61 @@ impl CLI {
 }
 
 impl Command {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
+    fn run(self, spotify: LazySpotify, config: &mut Config) -> Result<()> {
         match self {
-            Self::Status(x) => x.run(cli, config),
-            Self::Play(x) => x.run(cli, config),
-            Self::Pause(x) => x.run(cli, config),
-            Self::Client { cmd } => cmd.run(cli, config),
+            Self::Status(x) => x.run(spotify, config),
+            Self::Play(x) => x.run(spotify, config),
+            Self::Pause(x) => x.run(spotify, config),
+            Self::Client { cmd } => cmd.run(config),
         }
     }
 }
 
 impl Client {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
+    fn run(self, config: &mut Config) -> Result<()> {
         match self {
-            Self::New(x) => x.run(cli, config),
-            Self::List(x) => x.run(cli, config),
+            Self::New(x) => x.run(config),
+            Self::List(x) => x.run(config),
+            Self::Remove(x) => x.run(config),
+            Self::Eject(x) => x.run(config),
+            Self::Default(x) => x.run(config),
         }
     }
 }
 
+impl ClientDefault {
+    fn run(self, config: &mut Config) -> Result<()> {
+        config.set_default(self.id)?;
+
+        Ok(())
+    }
+}
+
+impl ClientEject {
+    fn run(&self, config: &mut Config) -> Result<()> {
+        for id in &self.ids {
+            config.eject_token(id);
+        }
+
+        Ok(())
+    }
+}
+
 impl ClientList {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
+    fn run(&self, config: &mut Config) -> Result<()> {
         let default = config.default();
 
-        for client in config.clients() {
-            write!(std::io::stdout(), "{:<33}", client)?;
+        for (client, token_is_some) in config.clients() {
             writeln!(
                 std::io::stdout(),
-                "{}",
+                "{:<33}{}{}",
+                client,
+                if token_is_some { "[token]" } else { "       " },
                 if default == Some(client) {
                     "[default]"
                 } else {
                     ""
-                }
+                },
             )?;
         }
 
@@ -159,8 +234,18 @@ impl ClientList {
     }
 }
 
+impl ClientRemove {
+    fn run(&self, config: &mut Config) -> Result<()> {
+        for id in &self.ids {
+            config.remove_client(id);
+        }
+
+        Ok(())
+    }
+}
+
 impl ClientNew {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
+    fn run(&self, config: &mut Config) -> Result<()> {
         let enc_key = crate::keyring::get_or_create_key()?;
 
         let (id, secret) = crate::dialouge::new_client()?;
@@ -168,7 +253,7 @@ impl ClientNew {
         config.add_client(id.clone(), secret, &enc_key)?;
 
         if crate::dialouge::set_default()? {
-            config.set_default(id);
+            config.set_default(id)?;
         }
 
         Ok(())
@@ -176,22 +261,22 @@ impl ClientNew {
 }
 
 impl Status {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
-        let output = cli.spotify(config)?.currently_playing(None)?.text()?;
+    fn run(&self, mut spotify: LazySpotify, config: &mut Config) -> Result<()> {
+        let output = spotify.as_mut(config)?.currently_playing(None)?.text()?;
         crate::dialouge::display(&output)
     }
 }
 
 impl Play {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
-        let output = cli.spotify(config)?.resume_playback(None)?.text()?;
+    fn run(&self, mut spotify: LazySpotify, config: &mut Config) -> Result<()> {
+        let output = spotify.as_mut(config)?.resume_playback(None)?.text()?;
         crate::dialouge::display(&output)
     }
 }
 
 impl Pause {
-    fn run(&self, cli: &CLI, config: &mut Config) -> Result<()> {
-        let output = cli.spotify(config)?.pause_playback(None)?.text()?;
+    fn run(&self, mut spotify: LazySpotify, config: &mut Config) -> Result<()> {
+        let output = spotify.as_mut(config)?.pause_playback(None)?.text()?;
         crate::dialouge::display(&output)
     }
 }

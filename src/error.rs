@@ -8,12 +8,49 @@ pub enum ApplicationError {
     #[error("Could not find app data dir")]
     UnavailableConfigDir,
     #[error("An error occured during crypto operatation")]
-    CryptographyError(ring::error::Unspecified),
+    CryptographyError,
 }
 
 impl From<ring::error::Unspecified> for ApplicationError {
-    fn from(err: ring::error::Unspecified) -> Self {
-        Self::CryptographyError(err)
+    fn from(_: ring::error::Unspecified) -> Self {
+        Self::CryptographyError
+    }
+}
+
+#[derive(Clone)]
+pub struct ArcAnyhowError(std::sync::Arc<anyhow::Error>);
+
+impl ArcAnyhowError {
+    pub fn new(err: anyhow::Error) -> Self {
+        Self(std::sync::Arc::new(err))
+    }
+}
+
+impl std::fmt::Debug for ArcAnyhowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Display for ArcAnyhowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Error for ArcAnyhowError {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.0.source()
+    }
+}
+
+impl From<&mut ArcAnyhowError> for anyhow::Error {
+    fn from(err: &mut ArcAnyhowError) -> Self {
+        anyhow::Error::new(err.clone())
     }
 }
 
@@ -56,10 +93,12 @@ impl<T: Error> SyncError<T> {
         }
     }
 
+    #[allow(unused)]
     pub(super) fn into_inner(self) -> T {
         self.lock.into_inner()
     }
 
+    #[allow(unused)]
     pub(super) fn get_mut(&mut self) -> &mut T {
         self.lock.get_mut()
     }

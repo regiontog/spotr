@@ -41,23 +41,6 @@ pub(super) fn new_client() -> Result<(String, String)> {
     Ok((id, secret))
 }
 
-pub(super) fn secret_for(id: &str) -> Result<String> {
-    writeln!(
-        io::stdout(),
-        "No client secret found for client id: '{id}'.\
-         If you have already created this spotify application \
-         the secret should be availiable from \
-         'https://developer.spotify.com/dashboard/applications/{id}'. \
-         See https://regiontog.github.io/spotr for documentation on \
-         how to change client id.",
-        id = id
-    )?;
-
-    Ok(rpassword::read_password_from_tty(Some("Client secret: "))?
-        .trim()
-        .to_owned())
-}
-
 pub(super) fn set_default() -> Result<bool> {
     confirm("Set new client as default")
 }
