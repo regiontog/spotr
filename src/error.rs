@@ -55,7 +55,7 @@ impl From<&mut ArcAnyhowError> for anyhow::Error {
 }
 
 #[derive(Debug)]
-pub(super) struct RouilleError {
+pub struct RouilleError {
     inner: Box<dyn Error + Send + Sync>,
 }
 
@@ -82,24 +82,24 @@ impl Error for RouilleError {
 }
 
 #[derive(Debug)]
-pub(super) struct SyncError<T: Error> {
+pub struct SyncError<T: Error> {
     lock: Mutex<T>,
 }
 
 impl<T: Error> SyncError<T> {
-    pub(super) fn new(error: T) -> Self {
+    pub fn new(error: T) -> Self {
         SyncError {
             lock: Mutex::new(error),
         }
     }
 
     #[allow(unused)]
-    pub(super) fn into_inner(self) -> T {
+    pub fn into_inner(self) -> T {
         self.lock.into_inner()
     }
 
     #[allow(unused)]
-    pub(super) fn get_mut(&mut self) -> &mut T {
+    pub fn get_mut(&mut self) -> &mut T {
         self.lock.get_mut()
     }
 }

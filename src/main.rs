@@ -1,6 +1,8 @@
 use anyhow::Result;
+use chrono::serde::ts_seconds;
 use env_logger::Builder;
 use log::LevelFilter;
+use serde::{Deserialize, Serialize};
 use spotify_web::scope::*;
 use structopt::StructOpt;
 
@@ -16,8 +18,28 @@ type Scope = spotify_web::scopes![UserReadCurrentlyPlaying, UserModifyPlaybackSt
 static CRYPT_ALGO: &ring::aead::Algorithm = &ring::aead::AES_256_GCM;
 
 // TODO
-// * improve token aquire code
 // * devices
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Token {
+    token: spotify_web::model::Token,
+
+    #[serde(with = "ts_seconds")]
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Token {
+    fn new(inner: spotify_web::model::Token) -> Self {
+        Self {
+            expires_at: chrono::Utc::now() + chrono::Duration::seconds(inner.expires_in),
+            token: inner,
+        }
+    }
+
+    fn has_expired(&self) -> bool {
+        chrono::Utc::now() >= self.expires_at
+    }
+}
 
 fn main() -> Result<()> {
     let cli = cli::CLI::from_args();

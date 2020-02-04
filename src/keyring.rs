@@ -29,7 +29,7 @@ fn to_lsk(bytes: &[u8]) -> Result<ring::aead::LessSafeKey> {
     Ok(ring::aead::LessSafeKey::new(ub))
 }
 
-pub(super) fn get_or_create_key() -> Result<ring::aead::LessSafeKey> {
+pub fn get_or_create_key() -> Result<ring::aead::LessSafeKey> {
     let key = secret_key();
 
     match key.get_password() {
@@ -39,12 +39,10 @@ pub(super) fn get_or_create_key() -> Result<ring::aead::LessSafeKey> {
 
             let written = base64::decode_config_slice(&b64, base64::STANDARD_NO_PAD, &mut secret)?;
 
-            if written != secret.len() {
-                // Invalid crypto key
-                // TODO: log
-
-                secret = new_secret(&key)?;
-            }
+            anyhow::ensure!(
+                written == secret.len(),
+                "decoded application encryption key invalid, recreating"
+            );
 
             Ok(to_lsk(&secret)?)
         }

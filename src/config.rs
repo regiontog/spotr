@@ -4,11 +4,11 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::error::ApplicationError;
 use crate::log_err;
+use crate::Token;
 use anyhow::Result;
 use directories::ProjectDirs;
 use ring::aead::{Aad, LessSafeKey, Nonce};
 use serde::{Deserialize, Serialize};
-use spotify_web::model::Token;
 
 #[derive(Serialize, Deserialize)]
 struct Encrypted<T> {
@@ -133,13 +133,40 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn set_default(&mut self, id: String) -> Result<()> {
-        anyhow::ensure!(self.clients.contains_key(&id), "Cannot set default client to non-existing client");
+    pub fn set_default_force<'a>(&mut self, id: impl Into<std::borrow::Cow<'a, str>>) {
+        let id = id.into();
 
         self.dirty = true;
 
-        self.default = Some(id);
-        Ok(())
+        match id {
+            std::borrow::Cow::Owned(s) => {
+                self.default = Some(s);
+            }
+            std::borrow::Cow::Borrowed(s) => {
+                let string = self
+                    .default
+                    .get_or_insert_with(|| String::with_capacity(s.len()));
+
+                string.truncate(0);
+                string.push_str(s);
+            }
+        }
+    }
+
+    pub fn set_default<'a, Id: Into<std::borrow::Cow<'a, str>>>(
+        &mut self,
+        id: Id,
+    ) -> std::result::Result<(), std::borrow::Cow<'a, str>> {
+        use std::ops::Deref;
+
+        let id = id.into();
+
+        if self.clients.contains_key(id.deref()) {
+            self.set_default_force(id);
+            Ok(())
+        } else {
+            Err(id)
+        }
     }
 
     pub fn default(&self) -> Option<&String> {

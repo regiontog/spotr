@@ -5,7 +5,7 @@ use spotify_web::Spotify;
 use structopt::StructOpt;
 
 use crate::config::Config;
-use crate::Scope;
+use crate::{Scope, Token};
 
 struct LazySpotify {
     generator: fn(Option<String>, &mut Config) -> Result<Spotify<Scope>>,
@@ -19,7 +19,9 @@ impl LazySpotify {
         let generator = self.generator;
 
         self.cell
-            .get_or_insert_with(|| (generator)(id.take(), cfg).map_err(crate::error::ArcAnyhowError::new))
+            .get_or_insert_with(|| {
+                (generator)(id.take(), cfg).map_err(crate::error::ArcAnyhowError::new)
+            })
             .as_mut()
             .map_err(Into::into)
     }
@@ -31,10 +33,10 @@ impl LazySpotify {
     about = env!("CARGO_PKG_DESCRIPTION"),
     author = env!("CARGO_PKG_AUTHORS"),
 )]
-pub(super) struct CLI {
+pub struct CLI {
     /// Client id of the spotify application to use
     #[structopt(long, short = "i")]
-    pub(super) client_id: Option<String>,
+    pub client_id: Option<String>,
 
     /// Verbosity of logging, repeated occurrences count as higher log levels
     #[structopt(
@@ -43,7 +45,7 @@ pub(super) struct CLI {
         short = "v",
         parse(from_occurrences)
     )]
-    pub(super) verbose: u8,
+    pub verbose: u8,
 
     #[structopt(subcommand)]
     cmd: Command,
@@ -125,7 +127,7 @@ struct Play {}
 struct Pause {}
 
 impl CLI {
-    pub(super) fn run(self, config: &mut Config) -> Result<()> {
+    pub fn run(self, config: &mut Config) -> Result<()> {
         let spotify = LazySpotify {
             client_id: self.client_id,
             generator: CLI::gen_spotify,
@@ -155,18 +157,27 @@ impl CLI {
             .redirect_uri("http://localhost:9524")
             .build();
 
-        // TODO: Maybe don't refresh if token is very fresh
-        if let Some(token) = token.map(|token| auth.refresh_token(token)).transpose()? {
-            config.set_token(&id, &token, &enc_key)?;
+        if let Some(token) = token {
+            if token.has_expired() {
+                log::debug!("token expired, refreshing");
 
-            Ok(client.with_access_token(&token)?)
+                let token = Token::new(auth.refresh_token(token.token)?);
+                config.set_token(&id, &token, &enc_key)?;
+
+                Ok(client.with_access_token(&token.token)?)
+            } else {
+                log::debug!("previous token has not expired yet, reusing it");
+
+                Ok(client.with_access_token(&token.token)?)
+            }
         } else {
+            log::info!("no token, fetching...");
             let code = crate::oauth::code(auth.url().as_str())?;
-            let token = auth.fetch_token2(code.as_str(), None)?;
+            let token = Token::new(auth.fetch_token2(code.as_str(), None)?);
 
             config.set_token(&id, &token, &enc_key)?;
 
-            Ok(client.with_access_token(&token)?)
+            Ok(client.with_access_token(&token.token)?)
         }
     }
 }
@@ -196,7 +207,9 @@ impl Client {
 
 impl ClientDefault {
     fn run(self, config: &mut Config) -> Result<()> {
-        config.set_default(self.id)?;
+        config.set_default(self.id).map_err(|id| {
+            anyhow::anyhow!("Could not set default client to non-existing id = '{}'", id)
+        })?;
 
         Ok(())
     }
@@ -250,11 +263,11 @@ impl ClientNew {
 
         let (id, secret) = crate::dialouge::new_client()?;
 
-        config.add_client(id.clone(), secret, &enc_key)?;
-
         if crate::dialouge::set_default()? {
-            config.set_default(id)?;
+            config.set_default_force(&id);
         }
+
+        config.add_client(id.clone(), secret, &enc_key)?;
 
         Ok(())
     }

@@ -6,7 +6,7 @@ use crate::error::RouilleError;
 use anyhow::Result;
 use parking_lot::Mutex;
 
-pub(super) fn code(url: &str) -> Result<String> {
+pub fn code(url: &str) -> Result<String> {
     let code = Arc::new(Mutex::new(None));
     let code2 = code.clone();
 

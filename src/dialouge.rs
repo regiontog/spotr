@@ -15,7 +15,7 @@ pub fn confirm(prompt: &str) -> Result<bool> {
     Ok(input == "" || input == "y" || input == "Y")
 }
 
-pub(super) fn new_client() -> Result<(String, String)> {
+pub fn new_client() -> Result<(String, String)> {
     writeln!(
         io::stdout(),
         "To use this CLI application you need to register an application with spotify. \
@@ -41,10 +41,10 @@ pub(super) fn new_client() -> Result<(String, String)> {
     Ok((id, secret))
 }
 
-pub(super) fn set_default() -> Result<bool> {
+pub fn set_default() -> Result<bool> {
     confirm("Set new client as default")
 }
 
-pub(super) fn display(value: &str) -> Result<()> {
+pub fn display(value: &str) -> Result<()> {
     Ok(writeln!(io::stdout(), "{}", value)?)
 }
